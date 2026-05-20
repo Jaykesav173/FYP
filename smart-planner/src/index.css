@@ -1,0 +1,186 @@
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── CSS Variables ── */
+:root {
+  --bg:           #F5F2EB;
+  --card:         #FDFCF9;
+  --card-alt:     #EDEAE1;
+  --primary:      #1B3A2D;
+  --primary-h:    #264D3C;
+  --accent:       #C97941;
+  --accent-light: #E8A870;
+  --teal:         #35695C;
+  --teal-light:   #4A8D7D;
+  --light:        #E2DDD3;
+  --border:       #D5D0C5;
+  --text:         #1E1E1C;
+  --muted:        #6F6E69;
+  --success:      #3D9B6A;
+  --warning:      #C97D1A;
+  --danger:       #C0483E;
+  --white:        #FFFFFF;
+  --sidebar-w:    230px;
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Typography ── */
+h1, h2, h3 { font-family: 'Playfair Display', serif; }
+.mono { font-family: 'DM Mono', monospace; }
+
+/* ── Buttons ── */
+button {
+  cursor: pointer;
+  border: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Inputs ── */
+input, select, textarea {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  outline: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 9px 12px;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--teal);
+}
+
+/* ── Utility classes ── */
+.fade-up  { animation: fadeUp 0.35s ease forwards; }
+.slide-in { animation: slideIn 0.25s ease forwards; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Shared card style ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+/* ── Page wrapper ── */
+.page {
+  padding: 32px 36px;
+  max-width: 1100px;
+}
+
+/* ── Page header ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 26px;
+  gap: 16px;
+}
+.page-header h1 { font-size: 26px; color: var(--text); }
+.page-header p  { color: var(--muted); font-size: 13px; margin-top: 3px; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.btn-primary  { background: var(--primary); color: var(--white); }
+.btn-primary:hover  { background: var(--primary-h); }
+.btn-accent   { background: var(--accent);  color: var(--white); }
+.btn-accent:hover   { opacity: 0.88; }
+.btn-teal     { background: var(--teal);    color: var(--white); }
+.btn-teal:hover     { background: var(--teal-light); }
+.btn-ghost    { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-ghost:hover    { background: var(--light); }
+.btn-danger   { background: #FEE2E2; color: var(--danger); }
+.btn-danger:hover   { background: #FECACA; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* ── Badge ── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.badge-high     { background: #FEE2E2; color: var(--danger); }
+.badge-medium   { background: #FEF3C7; color: var(--warning); }
+.badge-low      { background: #DCFCE7; color: var(--success); }
+.badge-success  { background: #DCFCE7; color: var(--success); }
+.badge-warning  { background: #FEF3C7; color: var(--warning); }
+.badge-danger   { background: #FEE2E2; color: var(--danger); }
+
+/* ── Loading spinner ── */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state h3    { font-size: 17px; color: var(--text); margin-bottom: 6px; }
+.empty-state p     { font-size: 13px; }
+
+/* ── Alert ── */
+.alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.alert-error   { background: #FEE2E2; color: var(--danger);  border: 1px solid #FECACA; }
+.alert-success { background: #DCFCE7; color: var(--success); border: 1px solid #BBF7D0; }
+.alert-info    { background: #DBEAFE; color: #1D4ED8;        border: 1px solid #BFDBFE; }
