@@ -6,16 +6,20 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
+    'allowed_origins' => array_filter([
         'http://localhost:3000',
         'http://localhost:3001',
         'http://127.0.0.1:3000',
         'http://127.0.0.1:3001',
-        'http://localhost:5173',  // Add Vite default port
+        'http://localhost:5173',
         'http://127.0.0.1:5173',
-    ],
+        env('FRONTEND_URL'),  // ← Your Vercel URL (set in Render env vars)
+    ]),
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        // Allow all Vercel preview deployments for your project
+        '#^https://.*\.vercel\.app$#',
+    ],
 
     'allowed_headers' => ['*'],
 
