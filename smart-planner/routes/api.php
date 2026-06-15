@@ -37,10 +37,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Notes
     Route::get('/notes',          [NoteController::class, 'index']);
     Route::post('/notes',         [NoteController::class, 'store']);
+    Route::put('/notes/{id}',     [NoteController::class, 'update']);
     Route::delete('/notes/{id}',  [NoteController::class, 'destroy']);
     Route::get('/notes/{id}/quizzes', [NoteController::class, 'quizzes']);
 
-    
+    Route::post('/notes/summarize',          [NoteController::class, 'summarize']);
+    Route::post('/notes/summarize-youtube',  [NoteController::class, 'summarizeYoutube']);
 
     // Quizzes
     Route::get('/quizzes/due',                    [QuizController::class, 'due']);
@@ -84,10 +86,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // Progress
     Route::get('/progress', [ProgressController::class, 'index']);
 
+    Route::get('/test', function () {
+    return response()->json(['message' => 'API is working!']);
+});
+
     // ── AI-Heavy Endpoints (rate limited to prevent quota abuse) ──
     Route::middleware('throttle:5,1')->group(function () {
         Route::post('/schedule/generate',  [ScheduleController::class, 'generate']);
         Route::post('/notes/{noteId}/generate-quiz',  [QuizController::class, 'generate']);
         Route::post('/quizzes/generate-multi', [QuizController::class, 'generateMulti']);
+        Route::post('/notes/summarize',          [NoteController::class, 'summarize']);
+        Route::post('/notes/summarize-youtube',  [NoteController::class, 'summarizeYoutube']);
     });
 });

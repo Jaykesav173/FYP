@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 
 class GeminiService
 {
-    private string $apiKey;
+    private array $apiKeys = [];
     private string $baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
 
     // ── Updated model list with newest free tier models ───────────────────
@@ -20,40 +20,51 @@ class GeminiService
 
     public function __construct()
     {
-        $this->apiKey = config('services.gemini.key');
+        $keys = config('services.gemini.key');
+        if (is_string($keys)) {
+            $this->apiKeys = array_values(array_filter(array_map('trim', explode(',', $keys))));
+        } elseif (is_array($keys)) {
+            $this->apiKeys = $keys;
+        }
     }
 
     // ── List available models (for debugging) ─────────────────────────────
     public function listModels(): array
     {
-        $res = Http::get("{$this->baseUrl}?key={$this->apiKey}");
+        $key = $this->apiKeys[0] ?? '';
+        $res = Http::get("{$this->baseUrl}?key={$key}");
         return $res->json('models') ?? [];
     }
 
     // ── Core API Call ──────────────────────────────────────────────────────
     public function chat(string $system, string $user, int $maxTokens = 2000): ?string
     {
-        if (empty($this->apiKey)) {
-            Log::error('Gemini API key is missing.');
+        if (empty($this->apiKeys)) {
+            Log::error('Gemini API keys are missing.');
             return null;
         }
 
-        foreach ($this->models as $model) {
-            $result = $this->callModel($model, $system, $user, $maxTokens);
-            if ($result !== null) {
-                Log::info("Gemini success with model: {$model}");
-                return $result;
+        $keys = $this->apiKeys;
+        shuffle($keys); // load balance across keys
+
+        foreach ($keys as $key) {
+            foreach ($this->models as $model) {
+                $result = $this->callModel($model, $key, $system, $user, $maxTokens);
+                if ($result !== null) {
+                    Log::info("Gemini success with model: {$model} using a rotated key");
+                    return $result;
+                }
             }
         }
 
-        Log::error('All Gemini models failed.');
+        Log::error('All Gemini models and keys failed.');
         return null;
     }
 
-    private function callModel(string $model, string $system, string $user, int $maxTokens): ?string
+    private function callModel(string $model, string $key, string $system, string $user, int $maxTokens): ?string
     {
         try {
-            $url = "{$this->baseUrl}/{$model}:generateContent?key={$this->apiKey}";
+            $url = "{$this->baseUrl}/{$model}:generateContent?key={$key}";
 
             $response = Http::timeout(60)->post($url, [
                 'system_instruction' => [
@@ -156,7 +167,23 @@ if (!empty($blockedTimes)) {
 
 Return ONLY this JSON (no markdown, no extra text):
 {
-  \"schedule\": { ... },
+  \"schedule\": {
+    \"summary\": \"Brief summary of the plan\",
+    \"days\": [
+      {
+        \"date\": \"YYYY-MM-DD\",
+        \"sessions\": [
+          {
+            \"subject\": \"EXACT name from subjects list\",
+            \"time\": \"HH:MM\",
+            \"duration\": 60,
+            \"priority\": \"high/medium/low\",
+            \"note\": \"Brief instruction\"
+          }
+        ]
+      }
+    ]
+  },
   \"stress\": {
     \"level\": \"moderate\",
     \"score\": 45,
@@ -268,9 +295,13 @@ private function chatWithFile(
     string $user,
     int    $maxTokens
 ): ?string {
-    foreach ($this->models as $model) {
-        try {
-            $url = "{$this->baseUrl}/{$model}:generateContent?key={$this->apiKey}";
+    $keys = $this->apiKeys;
+    shuffle($keys);
+
+    foreach ($keys as $key) {
+        foreach ($this->models as $model) {
+            try {
+                $url = "{$this->baseUrl}/{$model}:generateContent?key={$key}";
 
             $response = Http::timeout(120)->post($url, [
                 'system_instruction' => [
@@ -309,6 +340,7 @@ private function chatWithFile(
         } catch (\Exception $e) {
             Log::error("Gemini file [{$model}] exception: " . $e->getMessage());
         }
+    }
     }
     return null;
 }
@@ -460,12 +492,211 @@ Rules:
     return $result;
 }
 
+// ── Summarize MULTIPLE notes with YouTube Recommendations ──────────────────
+public function summarizeNotes(
+    array  $notes,       
+    string $combinedTitle
+): ?array {
+    $system = "You are an expert study assistant. Provide a comprehensive summary of the study materials, extract key points, identify topics, and recommend relevant YouTube videos for further learning. Return ONLY valid JSON, no markdown.";
+
+    $prompt = "Summarize the following study materials.
+Combined Topic: {$combinedTitle}
+Number of source materials: " . count($notes) . "
+
+Return ONLY this JSON:
+{
+  \"summary\": \"A comprehensive paragraph summarizing the core material.\",
+  \"key_points\": [\"Important point 1\", \"Important point 2\"],
+  \"topics\": [\"Topic A\", \"Topic B\"],
+  \"youtube_recommendations\": [
+    {
+      \"title\": \"Example related video topic or specific title\",
+      \"channel\": \"Example channel (e.g., CrashCourse, Khan Academy, or 'Various')\",
+      \"search_url\": \"https://www.youtube.com/results?search_query=URL_ENCODED_SEARCH_TERM\",
+      \"key_takeaways\": [\"What you will learn 1\", \"What you will learn 2\"]
+    }
+  ]
+}
+
+Rules:
+- Provide 3 to 5 YouTube recommendations
+- `search_url` must be a valid YouTube search URL based on the topic (e.g., https://www.youtube.com/results?search_query=data+structures)
+- Return ONLY JSON, nothing else.";
+
+    $parts     = [];
+    $textParts = [];
+
+    foreach ($notes as $i => $note) {
+        $label = "--- Material " . ($i + 1) . ": {$note['title']} ---";
+
+        if ($note['type'] === 'txt') {
+            $textParts[] = $label . "\n" . $note['content'];
+        } else {
+            $parts[] = [
+                'inline_data' => [
+                    'mime_type' => $note['mime'],
+                    'data'      => $note['content'],
+                ],
+            ];
+        }
+    }
+
+    if (!empty($textParts)) {
+        array_unshift($parts, ['text' => implode("\n\n", $textParts)]);
+    }
+
+    $parts[] = ['text' => $prompt];
+
+    $response = $this->chatWithParts($parts, $system, 3000);
+    if (!$response) return null;
+
+    return $this->parseJson($response);
+}
+
+// ── Summarize YouTube Video ───────────────────────────────────────────────
+public function summarizeYouTubeVideo(string $url): ?array
+{
+    // 1. Extract real video metadata from the YouTube page
+    $videoInfo = $this->fetchYouTubeVideoInfo($url);
+    
+    $title       = $videoInfo['title']       ?? 'Unknown Video';
+    $description = $videoInfo['description'] ?? '';
+    $transcript  = $videoInfo['transcript']  ?? '';
+
+    $system = "You are an expert study assistant. You are given REAL metadata and transcript from a YouTube video. Summarize the ACTUAL content of the video based on this data. Return ONLY valid JSON, no markdown.";
+
+    $contentBlock = "YouTube Video URL: {$url}\nVideo Title: {$title}\n";
+    if (!empty($description)) {
+        $contentBlock .= "Video Description:\n{$description}\n\n";
+    }
+    if (!empty($transcript)) {
+        $contentBlock .= "Video Transcript / Captions:\n{$transcript}\n\n";
+    }
+
+    $prompt = "{$contentBlock}
+Based on the ACTUAL video information above, provide a comprehensive summary and extract the detailed important points.
+
+Return ONLY this JSON:
+{
+  \"title\": \"{$title}\",
+  \"summary\": \"A comprehensive, multi-paragraph summary detailing the actual video content, its context, and its core message.\",
+  \"key_points\": [
+    \"Detailed important point 1 explaining a specific concept or argument made in the video\",
+    \"Detailed important point 2...\",
+    \"Detailed important point 3...\"
+  ],
+  \"topics\": [\"Related topic 1\", \"Related topic 2\"]
+}
+
+Rules:
+- Base your summary strictly on the provided title, description, and transcript
+- Do NOT guess or hallucinate content
+- Return ONLY JSON, nothing else.";
+
+    $response = $this->chat($system, $prompt, 2000);
+    if (!$response) return null;
+
+    return $this->parseJson($response);
+}
+
+/**
+ * Fetch real YouTube video info: title, description, and transcript
+ */
+private function fetchYouTubeVideoInfo(string $url): array
+{
+    $info = ['title' => '', 'description' => '', 'transcript' => ''];
+
+    try {
+        // 1. Get title via oEmbed (reliable, no API key needed)
+        $oembedUrl = 'https://www.youtube.com/oembed?url=' . urlencode($url) . '&format=json';
+        $oembedRes = Http::timeout(10)->get($oembedUrl);
+        if ($oembedRes->ok()) {
+            $info['title'] = $oembedRes->json('title') ?? '';
+        }
+
+        // 2. Fetch the YouTube page HTML for description and captions
+        $pageRes = Http::timeout(15)
+            ->withHeaders(['Accept-Language' => 'en-US,en;q=0.9'])
+            ->get($url);
+
+        if ($pageRes->ok()) {
+            $html = $pageRes->body();
+
+            // Extract description from meta tag
+            if (preg_match('/<meta\s+name=["\']description["\']\s+content=["\']([^"\']*)["\']/', $html, $m)) {
+                $info['description'] = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+            }
+
+            // Try to extract captions/transcript URL from the page's ytInitialPlayerResponse
+            $transcript = $this->extractYouTubeTranscript($html, $url);
+            if (!empty($transcript)) {
+                $info['transcript'] = $transcript;
+            }
+        }
+    } catch (\Exception $e) {
+        Log::warning('Failed to fetch YouTube video info: ' . $e->getMessage());
+    }
+
+    return $info;
+}
+
+/**
+ * Try to extract and fetch YouTube captions/transcript from page HTML
+ */
+private function extractYouTubeTranscript(string $html, string $url): string
+{
+    try {
+        // Look for captions track URL in ytInitialPlayerResponse
+        if (preg_match('/ytInitialPlayerResponse\s*=\s*(\{.+?\});/', $html, $m)) {
+            $playerData = json_decode($m[1], true);
+
+            $captionTracks = $playerData['captions']['playerCaptionsTracklistRenderer']['captionTracks'] ?? [];
+            if (empty($captionTracks)) return '';
+
+            // Prefer English, otherwise use the first available track
+            $selectedTrack = $captionTracks[0];
+            foreach ($captionTracks as $track) {
+                if (str_starts_with($track['languageCode'] ?? '', 'en')) {
+                    $selectedTrack = $track;
+                    break;
+                }
+            }
+
+            $captionUrl = $selectedTrack['baseUrl'] ?? '';
+            if (empty($captionUrl)) return '';
+
+            // Fetch the captions XML
+            $captionRes = Http::timeout(10)->get($captionUrl);
+            if (!$captionRes->ok()) return '';
+
+            // Parse the XML captions and extract text
+            $xml = $captionRes->body();
+            preg_match_all('/<text[^>]*>([^<]*)<\/text>/', $xml, $matches);
+
+            if (!empty($matches[1])) {
+                $lines = array_map(fn($t) => html_entity_decode(trim($t), ENT_QUOTES, 'UTF-8'), $matches[1]);
+                $transcript = implode(' ', array_filter($lines));
+                // Limit transcript length to avoid exceeding token limits
+                return mb_substr($transcript, 0, 8000);
+            }
+        }
+    } catch (\Exception $e) {
+        Log::warning('Failed to extract YouTube transcript: ' . $e->getMessage());
+    }
+
+    return '';
+}
+
 // ── Core multi-part call ───────────────────────────────────────────────────
 private function chatWithParts(array $parts, string $system, int $maxTokens): ?string
 {
-    foreach ($this->models as $model) {
-        try {
-            $url = "{$this->baseUrl}/{$model}:generateContent?key={$this->apiKey}";
+    $keys = $this->apiKeys;
+    shuffle($keys);
+
+    foreach ($keys as $key) {
+        foreach ($this->models as $model) {
+            try {
+                $url = "{$this->baseUrl}/{$model}:generateContent?key={$key}";
 
             $response = Http::timeout(120)->post($url, [
                 'system_instruction' => [
@@ -499,6 +730,7 @@ private function chatWithParts(array $parts, string $system, int $maxTokens): ?s
         } catch (\Exception $e) {
             Log::error("Gemini parts [{$model}] exception: " . $e->getMessage());
         }
+    }
     }
     return null;
 }

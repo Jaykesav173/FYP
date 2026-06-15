@@ -57,6 +57,12 @@ class AuthController extends Controller
 
         $user = User::where('email', $validated['email'])->first();
 
+        \Illuminate\Support\Facades\Log::info('Login attempt', [
+            'email_received' => $validated['email'],
+            'user_found' => $user ? true : false,
+            'password_matches' => $user ? Hash::check($validated['password'], $user->password) : false,
+        ]);
+
         if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
                 'success' => false,
@@ -64,8 +70,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Revoke old tokens and create fresh one
-        $user->tokens()->delete();
+        // Create a new token (keep existing tokens so other browsers stay logged in)
         $token = $user->createToken('smart-planner-token')->plainTextToken;
 
         return response()->json([
