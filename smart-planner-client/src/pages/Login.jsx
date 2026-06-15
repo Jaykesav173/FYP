@@ -319,7 +319,7 @@ export default function Login() {
                   {mode === 'register' && (
                     <div>
                       <label style={{ fontSize:11, fontWeight:600, color:'#7A4F2E', display:'block', marginBottom:6, letterSpacing:'0.8px' }}>FULL NAME</label>
-                      <input placeholder="Full name" value={form.name}
+                      <input placeholder="e.g. John Doe" value={form.name}
                         onChange={e => set('name', e.target.value)}
                         style={{ width:'100%', padding:'10px 14px', borderRadius:8, fontSize:13, border:'1.5px solid #D4B896', background:'#FFFDF9', outline:'none', boxSizing:'border-box' }}
                         onFocus={e => e.target.style.borderColor = '#8B5A2B'}
