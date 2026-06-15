@@ -408,12 +408,7 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Demo hint */}
-              {mode === 'login' && (
-                <div style={{ marginTop:18, padding:'11px 14px', borderRadius:8, background:'#F9F1E8', border:'1px solid #E8D5BC', fontSize:12, color:'#8B6040', textAlign:'center', lineHeight:1.7 }}>
-                  🎓 Demo: <strong>student@smartplanner.com</strong> / <strong>password123</strong>
-                </div>
-              )}
+
             </>
           )}
         </div>
