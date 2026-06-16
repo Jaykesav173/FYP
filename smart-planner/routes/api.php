@@ -25,6 +25,15 @@ Route::get('/public/quizzes/{token}',          [QuizController::class, 'publicSh
 Route::post('/public/quizzes/{token}/attempt', [QuizController::class, 'publicAttempt']);
 Route::get('/public/schedule/export/{email_hash}', [ScheduleController::class, 'exportICalPublic']);
 
+// Public Note Files
+Route::get('/public/notes/{userId}/{filename}', function($userId, $filename) {
+    $path = storage_path("app/public/notes/{$userId}/{$filename}");
+    if (!file_exists($path)) {
+        abort(404);
+    }
+    return response()->file($path);
+});
+
 // ── Protected ─────────────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
 

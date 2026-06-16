@@ -4,7 +4,7 @@ import {
   Upload, FileText, FileImage, File, Brain,
   Trash2, Clock, Award, BookOpen, Plus, X,
   CheckSquare, Square, History, Calendar,
-  PlayCircle, AlignLeft, Search, Filter, Edit2,
+  PlayCircle, AlignLeft, Search, Filter, Edit2, Eye,
 } from 'lucide-react';
 import {
   getNotes, uploadNote, deleteNote, updateNote,
@@ -630,6 +630,7 @@ export default function Notes() {
     setEditForm({
       title: note.title,
       subject_id: note.subject ? note.subject.id : '',
+      file: null,
     });
   };
 
@@ -637,7 +638,17 @@ export default function Notes() {
     if (!editForm.title.trim()) { addToast('Title is required.', 'error'); return; }
     setUpdating(true);
     try {
-      const res = await updateNote(editingNote.id, editForm);
+      let payload;
+      if (editForm.file) {
+        payload = new FormData();
+        payload.append('title', editForm.title);
+        if (editForm.subject_id) payload.append('subject_id', editForm.subject_id);
+        payload.append('file', editForm.file);
+      } else {
+        payload = { title: editForm.title, subject_id: editForm.subject_id };
+      }
+      
+      const res = await updateNote(editingNote.id, payload);
       setNotes(prev => prev.map(n => n.id === editingNote.id ? res.note : n));
       addToast('Note updated successfully.', 'success');
       setEditingNote(null);
@@ -748,6 +759,24 @@ export default function Notes() {
                 <option value="">No subject</option>
                 {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>REPLACE FILE (optional)</label>
+              <input
+                type="file"
+                accept=".pdf,.txt,.jpg,.jpeg,.png"
+                onChange={e => {
+                  const f = e.target.files[0];
+                  if (f) setEditForm({ ...editForm, file: f });
+                }}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }}
+              />
+              {editForm.file ? (
+                <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 6 }}>Selected: {editForm.file.name}</div>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Current file: {editingNote.original_filename}</div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1172,6 +1201,21 @@ export default function Notes() {
                         ? <><span className="spinner" style={{ width:13, height:13, borderWidth:2, borderColor:'white', borderTopColor:'transparent' }} /> ...</>
                         : <><AlignLeft size={13} /> Summarize</>}
                     </button>
+
+                    <a
+                      href={note.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        width:34, height:34, borderRadius:8, background:'var(--light)', color:'var(--text)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                        transition:'all 0.15s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'var(--light)'}
+                      title="View Note File"
+                    >
+                      <Eye size={14} />
+                    </a>
 
                     <button
                       onClick={() => openEditModal(note)}

@@ -54,7 +54,7 @@ class NoteController extends Controller
         $userId   = $request->user()->id;
 
         // Store file
-        $file->storeAs("public/notes/{$userId}", $stored);
+        $file->storeAs("notes/{$userId}", $stored, 'public');
 
         // Extract text for TXT files
         $textContent = null;
@@ -135,7 +135,7 @@ class NoteController extends Controller
         }
 
         // Delete stored file
-        Storage::delete("public/notes/{$note->user_id}/{$note->stored_filename}");
+        Storage::disk('public')->delete("notes/{$note->user_id}/{$note->stored_filename}");
         $note->delete();
 
         return response()->json(['success' => true, 'message' => 'Note deleted.']);
@@ -149,6 +149,7 @@ class NoteController extends Controller
         $request->validate([
             'title'      => 'required|string|max:255',
             'subject_id' => 'nullable|exists:subjects,id',
+            'file'       => 'nullable|file|max:10240|mimes:pdf,txt,jpg,jpeg,png',
         ]);
 
         $note = Note::where('id', $id)
@@ -161,6 +162,35 @@ class NoteController extends Controller
 
         $note->title = $request->title;
         $note->subject_id = $request->subject_id ?: null;
+
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $ext  = strtolower($file->getClientOriginalExtension());
+            $mime = $file->getMimeType();
+            $original = $file->getClientOriginalName();
+            $stored = Str::uuid() . '.' . $ext;
+            $userId = $request->user()->id;
+
+            // Store new file
+            $file->storeAs("notes/{$userId}", $stored, 'public');
+
+            // Extract text for TXT files
+            $textContent = null;
+            if ($ext === 'txt') {
+                $textContent = file_get_contents($file->getRealPath());
+            }
+
+            // Delete old file
+            Storage::disk('public')->delete("notes/{$note->user_id}/{$note->stored_filename}");
+
+            $note->original_filename = $original;
+            $note->stored_filename = $stored;
+            $note->file_type = $ext;
+            $note->mime_type = $mime;
+            $note->file_size = $file->getSize();
+            $note->text_content = $textContent;
+        }
+
         $note->save();
         $note->load('subject');
 
@@ -206,14 +236,14 @@ class NoteController extends Controller
                 ];
             } else {
                 // PDF or image — base64
-                $path = "public/notes/{$note->user_id}/{$note->stored_filename}";
+                $path = "notes/{$note->user_id}/{$note->stored_filename}";
 
-                if (!Storage::exists($path)) continue;
+                if (!Storage::disk('public')->exists($path)) continue;
 
                 $noteContents[] = [
                     'title'   => $note->title,
                     'type'    => $note->file_type,
-                    'content' => base64_encode(Storage::get($path)),
+                    'content' => base64_encode(Storage::disk('public')->get($path)),
                     'mime'    => $note->mime_type,
                 ];
             }
@@ -306,6 +336,7 @@ class NoteController extends Controller
         'quiz_count'        => $singleNoteQuizzes->count(),  // ← Only single-note quizzes
         'latest_quiz'       => $singleNoteQuizzes->sortByDesc('created_at')->first()?->id,  // ← Only from single-note quizzes
         'created_at'        => $n->created_at->format('M d, Y'),
+        'file_url'          => url("api/public/notes/{$n->user_id}/{$n->stored_filename}"),
     ];
 }
 }

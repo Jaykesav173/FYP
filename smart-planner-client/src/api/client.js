@@ -107,7 +107,16 @@ export const uploadNote  = (formData)  => api.post('/notes', formData, {
   headers: { 'Content-Type': 'multipart/form-data' },
   timeout: 30000,
 });
-export const updateNote  = (id, data)  => api.put(`/notes/${id}`, data);
+export const updateNote  = (id, data)  => {
+  if (data instanceof FormData) {
+    data.append('_method', 'PUT');
+    return api.post(`/notes/${id}`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+  }
+  return api.put(`/notes/${id}`, data);
+};
 export const deleteNote  = (id)        => api.delete(`/notes/${id}`);
 export const summarizeNotes   = (data) => api.post('/notes/summarize', data, { timeout: 120000 });
 export const summarizeYoutube = (data) => api.post('/notes/summarize-youtube', data, { timeout: 120000 });
