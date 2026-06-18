@@ -88,13 +88,13 @@ class QuizController extends Controller
             $contentType = 'txt';
         } else {
             // PDF or image — read as base64
-            $path = "public/notes/{$note->user_id}/{$note->stored_filename}";
+            $path = "notes/{$note->user_id}/{$note->stored_filename}";
 
-            if (!Storage::exists($path)) {
+            if (!Storage::disk('public')->exists($path)) {
                 return response()->json(['success' => false, 'message' => 'File not found.'], 404);
             }
 
-            $content     = base64_encode(Storage::get($path));
+            $content     = base64_encode(Storage::disk('public')->get($path));
             $contentType = $note->mime_type;
         }
 
@@ -170,14 +170,14 @@ class QuizController extends Controller
                 ];
             } else {
                 // PDF or image — base64
-                $path = "public/notes/{$note->user_id}/{$note->stored_filename}";
+                $path = "notes/{$note->user_id}/{$note->stored_filename}";
 
-                if (!Storage::exists($path)) continue;
+                if (!Storage::disk('public')->exists($path)) continue;
 
                 $noteContents[] = [
                     'title'   => $note->title,
                     'type'    => $note->file_type,
-                    'content' => base64_encode(Storage::get($path)),
+                    'content' => base64_encode(Storage::disk('public')->get($path)),
                     'mime'    => $note->mime_type,
                 ];
             }

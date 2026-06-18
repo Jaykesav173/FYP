@@ -35,7 +35,36 @@ function FileIcon({ type, size = 40 }) {
 }
 
 // ── All Quizzes Modal ───────────────────────────────────────────────────────
-function AllQuizzesModal({ quizzes, loading, onClose, onViewQuiz, hasMore, onLoadMore, onToggleSrs }) {
+function AllQuizzesModal({ quizzes, loading, onClose, onViewQuiz, hasMore, onLoadMore, onDeleteQuiz, onToggleSrs }) {
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedQuizzes, setSelectedQuizzes] = useState(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const toggleSelectMode = () => {
+    setSelectMode(!selectMode);
+    setSelectedQuizzes(new Set());
+  };
+
+  const handleSelectQuiz = (quizId) => {
+    const newSet = new Set(selectedQuizzes);
+    if (newSet.has(quizId)) newSet.delete(quizId);
+    else newSet.add(quizId);
+    setSelectedQuizzes(newSet);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedQuizzes.size === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedQuizzes.size} quizzes?`)) return;
+    
+    setIsDeleting(true);
+    for (const id of Array.from(selectedQuizzes)) {
+      await onDeleteQuiz(id);
+    }
+    setIsDeleting(false);
+    setSelectedQuizzes(new Set());
+    setSelectMode(false);
+  };
+
   // Group quizzes by note - check note_ids to separate multi-note quizzes
   const groupedByNote = quizzes.reduce((acc, quiz) => {
     // If note_ids is not null, it's a multi-note quiz
@@ -81,9 +110,47 @@ function AllQuizzesModal({ quizzes, loading, onClose, onViewQuiz, hasMore, onLoa
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>All Quizzes</h3>
             <p style={{ fontSize: 13, color: 'var(--muted)' }}>{quizzes.length} total quizzes across all notes</p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-            <X size={20} color="var(--muted)" />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {quizzes.length > 0 && (
+              <button 
+                onClick={toggleSelectMode}
+                style={{
+                  background: selectMode ? 'var(--card-alt)' : 'transparent',
+                  color: 'var(--text)',
+                  border: `1px solid ${selectMode ? 'var(--primary)' : 'var(--border)'}`,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {selectMode ? 'Cancel Selection' : 'Select Quizzes'}
+              </button>
+            )}
+            {selectMode && selectedQuizzes.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                style={{
+                  background: '#ff4d4f',
+                  color: 'white',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isDeleting ? 'wait' : 'pointer',
+                  opacity: isDeleting ? 0.7 : 1
+                }}
+              >
+                {isDeleting ? 'Deleting...' : `Delete Selected (${selectedQuizzes.size})`}
+              </button>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+              <X size={20} color="var(--muted)" />
+            </button>
+          </div>
         </div>
  
         {loading ? (
@@ -118,6 +185,16 @@ function AllQuizzesModal({ quizzes, loading, onClose, onViewQuiz, hasMore, onLoa
                       border: '1px solid var(--border)',
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        {selectMode && (
+                          <div style={{ marginRight: 12, marginTop: 4 }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedQuizzes.has(quiz.id)}
+                              onChange={() => handleSelectQuiz(quiz.id)}
+                              style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                            />
+                          </div>
+                        )}
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>
                             QUIZ #{group.quizzes.length - idx}
@@ -345,6 +422,7 @@ export default function Notes() {
   const [loading,    setLoading]    = useState(true);
   const [showForm,   setShowForm]   = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generationType, setGenerationType] = useState('quiz');
   const [genSingle,  setGenSingle]  = useState(null);
   const [deleting,   setDeleting]   = useState(null);
   const [uploading,  setUploading]  = useState(false);
@@ -496,6 +574,7 @@ export default function Notes() {
   // ── Generate quiz — single note ───────────────────────────────────────────
   const handleGenerateSingle = async (note) => {
     setGenSingle(note.id);
+    setGenerationType('quiz');
     setGenerating(true);
     try {
       const res = await generateQuiz(note.id, {
@@ -518,6 +597,7 @@ export default function Notes() {
   // ── Generate quiz — multiple notes ────────────────────────────────────────
   const handleGenerateMulti = async () => {
     if (selected.size === 0) return;
+    setGenerationType('quiz');
     setGenerating(true);
     try {
       const res = await generateQuizMulti({
@@ -541,6 +621,7 @@ export default function Notes() {
   // ── Generate Flashcards — multiple notes ──────────────────────────────────
   const handleGenerateFlashcardsMulti = async () => {
     if (selected.size === 0) return;
+    setGenerationType('flashcards');
     setGenerating(true);
     try {
       const res = await generateFlashcards({
@@ -797,12 +878,12 @@ export default function Notes() {
               {summarizing ? '📝' : '🧠'}
             </div>
             <h2 style={{ color:'white', fontFamily:"'Playfair Display',serif", marginBottom:10 }}>
-              {summarizing ? 'Summarizing...' : (selected.size > 1 ? `Combining ${selected.size} Notes` : 'Generating Quiz')}
+              {summarizing ? 'Summarizing...' : (generationType === 'flashcards' ? 'Generating Flashcards' : (selected.size > 1 ? `Combining ${selected.size} Notes` : 'Generating Quiz'))}
             </h2>
             <p style={{ color:'rgba(255,255,255,0.6)', fontSize:14, marginBottom:8 }}>
               {summarizing 
                 ? 'Analyzing content to extract key points and find related YouTube videos...'
-                : (selected.size > 1 ? 'Reading all selected notes and crafting comprehensive questions…' : 'Reading your notes and crafting questions…')}
+                : (generationType === 'flashcards' ? 'Reading your notes and extracting key concepts for flashcards…' : (selected.size > 1 ? 'Reading all selected notes and crafting comprehensive questions…' : 'Reading your notes and crafting questions…'))}
             </p>
             {selected.size > 1 && !summarizing && (
               <div style={{ marginBottom:16 }}>
@@ -1181,7 +1262,7 @@ export default function Notes() {
                     >
                       {genSingle === note.id
                         ? <><span className="spinner" style={{ width:13, height:13, borderWidth:2 }} /> Generating…</>
-                        : <><Brain size={13} /> Generate</>}
+                        : <><Brain size={13} /> Generate Quiz</>}
                     </button>
 
                     <button
