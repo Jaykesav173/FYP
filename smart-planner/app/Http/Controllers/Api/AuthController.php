@@ -63,10 +63,17 @@ class AuthController extends Controller
             'password_matches' => $user ? Hash::check($validated['password'], $user->password) : false,
         ]);
 
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
+        if (!$user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid email or password.',
+                'message' => 'This email is not registered. Please create an account first.',
+            ], 401);
+        }
+
+        if (!Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Incorrect password. Please try again.',
             ], 401);
         }
 
