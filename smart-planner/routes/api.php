@@ -89,7 +89,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Schedule
     Route::get('/schedule/export',     [ScheduleController::class, 'exportICal']);
     Route::get('/schedule',            [ScheduleController::class, 'index']);
+    Route::post('/sessions/track-activity', [ScheduleController::class, 'trackActivity']);
     Route::post('/sessions/{id}/toggle', [ScheduleController::class, 'toggleCompletion']);
+    Route::post('/sessions/{id}/checklist', [ScheduleController::class, 'updateChecklist']);
     Route::get('/stress/history', [ProgressController::class, 'stressHistory']);
 
     // Progress

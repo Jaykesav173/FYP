@@ -84,6 +84,8 @@ export const exportICal = async () => {
 
 // ── Completions ───────────────────────────────────────────────────────────────
 export const toggleCompletion = (id) => api.post(`/sessions/${id}/toggle`);
+export const updateSessionChecklist = (id, data) => api.post(`/sessions/${id}/checklist`, data);
+export const trackSessionActivity = (data) => api.post('/sessions/track-activity', data);
 
 
 
@@ -141,7 +143,4 @@ export const getProfile        = ()     => api.get('/profile');
 export const updateProfileInfo = (data) => api.put('/profile/info', data);
 export const updatePassword    = (data) => api.put('/profile/password', data);
 export const deleteAccount     = (data) => api.delete('/profile', { data });
-
-export const getStressHistory = () => api.get('/stress/history');
-export const logMindsetStress = (data) => api.post('/stress', data);
 

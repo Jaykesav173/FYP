@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getProgress, getSchedule }   from '../api/client';
 import { useToast }      from '../components/Toast';
-import StressCard        from '../components/StressCard';
+
 import ProgressBar       from '../components/ProgressBar';
 import StudyHoursChart   from '../components/StudyHoursChart';
 import CompletionTrendChart from '../components/CompletionTrendChart';
@@ -43,7 +43,7 @@ export default function Progress() {
       <div className="page-header">
         <div>
           <h1>Progress & Analytics</h1>
-          <p>ML-powered insights into your study performance and stress patterns.</p>
+          <p>ML-powered insights into your study performance.</p>
         </div>
       </div>
 
@@ -104,13 +104,7 @@ export default function Progress() {
             </div>
           </div>
 
-          {/* Stress card */}
-          <StressCard
-            level={stats?.stress_level}
-            score={stats?.stress_score}
-            message={stats?.stress_message}
-            tips={stats?.stress_tips}
-          />
+
         </div>
       )}
 
@@ -188,26 +182,18 @@ export default function Progress() {
         )}
       </div>
 
-      {/* ── AI Recommendations ── */}
-      {!loading && (stats?.stress_tips?.length > 0 || stats?.ai_insight) && (
+      {/* ── AI Insight ── */}
+      {!loading && stats?.ai_insight && (
         <div className="card" style={{ background: 'var(--primary)', border: 'none' }}>
           <h3 style={{ color: 'white', marginBottom: 14 }}>AI Recommendations</h3>
-          {stats.stress_tips?.map((tip, i) => (
-            <div key={i} style={{ display: 'flex', gap: 10, fontSize: 13, color: 'rgba(255,255,255,0.72)', marginBottom: 10, lineHeight: 1.6 }}>
-              <span style={{ color: 'var(--accent-light)', flexShrink: 0, fontWeight: 700 }}>→</span>
-              {tip}
+          <div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', marginBottom: 8 }}>
+              PERSONALIZED INSIGHT
             </div>
-          ))}
-          {stats.ai_insight && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '1px', marginBottom: 8 }}>
-                PERSONALIZED INSIGHT
-              </div>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', lineHeight: 1.8 }}>
-                {stats.ai_insight}
-              </p>
-            </div>
-          )}
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', lineHeight: 1.8 }}>
+              {stats.ai_insight}
+            </p>
+          </div>
         </div>
       )}
     </div>

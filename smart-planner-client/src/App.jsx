@@ -1,4 +1,4 @@
-import { useState } from 'react';
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider }    from './context/AuthContext';
 import { ToastProvider }   from './components/Toast';
@@ -22,7 +22,7 @@ import { PomodoroProvider } from './context/PomodoroContext';
 import PomodoroWidget from './components/PomodoroWidget';
 
 export default function App() {
-  const [stress, setStress] = useState(null);
+
 
   return (
     <AuthProvider>
@@ -41,28 +41,28 @@ export default function App() {
             {/* Protected */}
             <Route path="/" element={
               <ProtectedRoute>
-                <Layout stress={stress}>
-                  <Dashboard onStressUpdate={setStress} />
+                <Layout>
+                  <Dashboard />
                 </Layout>
               </ProtectedRoute>
             }/>
             <Route path="/subjects" element={
               <ProtectedRoute>
-                <Layout stress={stress}>
+                <Layout>
                   <Subjects />
                 </Layout>
               </ProtectedRoute>
             }/>
             <Route path="/schedule" element={
               <ProtectedRoute>
-                <Layout stress={stress}>
-                  <Schedule onStressUpdate={setStress} />
+                <Layout>
+                  <Schedule />
                 </Layout>
               </ProtectedRoute>
             }/>
             <Route path="/progress" element={
               <ProtectedRoute>
-                <Layout stress={stress}>
+                <Layout>
                   <Progress />
                 </Layout>
               </ProtectedRoute>
@@ -71,7 +71,7 @@ export default function App() {
               path="/blocked-times"
               element={
                 <ProtectedRoute>
-                  <Layout stress={stress}>
+                  <Layout>
                     <BlockedTimes />
                   </Layout>
                 </ProtectedRoute>
@@ -79,22 +79,22 @@ export default function App() {
             />
             <Route path="/notes" element={
             <ProtectedRoute>
-              <Layout stress={stress}><Notes /></Layout>
+              <Layout><Notes /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/quiz/:id" element={
             <ProtectedRoute>
-              <Layout stress={stress}><QuizPlayer /></Layout>
+              <Layout><QuizPlayer /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/flashcards/:id" element={
             <ProtectedRoute>
-              <Layout stress={stress}><FlashcardPlayer /></Layout>
+              <Layout><FlashcardPlayer /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/profile" element={
   <ProtectedRoute>
-    <Layout stress={stress}><Profile /></Layout>
+    <Layout><Profile /></Layout>
   </ProtectedRoute>
 } />
             {/* Catch all */}

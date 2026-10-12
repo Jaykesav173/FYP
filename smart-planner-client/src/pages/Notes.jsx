@@ -5,11 +5,13 @@ import {
   Trash2, Clock, Award, BookOpen, Plus, X,
   CheckSquare, Square, History, Calendar,
   PlayCircle, AlignLeft, Search, Filter, Edit2, Eye,
+  Check, ExternalLink, Layers,
 } from 'lucide-react';
 import {
   getNotes, uploadNote, deleteNote, updateNote,
   getSubjects, generateQuiz, generateQuizMulti, generateFlashcards,
-  getQuizzes, deleteQuiz, toggleQuizSrs, summarizeNotes, summarizeYoutube
+  getQuizzes, deleteQuiz, toggleQuizSrs, summarizeNotes, summarizeYoutube,
+  trackSessionActivity,
 } from '../api/client';
 import { useToast } from '../components/Toast';
 
@@ -315,8 +317,19 @@ function AllQuizzesModal({ quizzes, loading, onClose, onViewQuiz, hasMore, onLoa
 }
 
 // ── Summary Modal ───────────────────────────────────────────────────────────
-function SummaryModal({ data, onClose }) {
+function SummaryModal({ data, onClose, onTrackVideo }) {
   if (!data) return null;
+
+  const [clickedVideos, setClickedVideos] = useState(new Set());
+
+  const handleVideoClick = (index, vid) => {
+    const nextSet = new Set(clickedVideos);
+    nextSet.add(index);
+    setClickedVideos(nextSet);
+    if (onTrackVideo) {
+      onTrackVideo(index, nextSet.size, data);
+    }
+  };
 
   return (
     <div style={{
@@ -385,29 +398,113 @@ function SummaryModal({ data, onClose }) {
         {/* ── YouTube Recommendations ── */}
         {data.youtube_recommendations && data.youtube_recommendations.length > 0 && (
           <div style={{ marginTop: 32 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <PlayCircle size={20} color="#FF0000" /> Recommended Videos
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <PlayCircle size={20} color={clickedVideos.size >= 3 ? "var(--success)" : "#FF0000"} /> Recommended Videos
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: clickedVideos.size >= 3 ? 'var(--success)' : 'var(--muted)',
+                }}>
+                  {clickedVideos.size >= 3
+                    ? '🎉 3/3 Videos Clicked (Ticked Green in Schedule!)'
+                    : `${clickedVideos.size}/3 Clicked (Click all 3 to tick green)`}
+                </span>
+                <div style={{ width: 70, height: 6, background: 'var(--light)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${(Math.min(3, clickedVideos.size) / 3) * 100}%`,
+                    height: '100%',
+                    background: 'var(--success)',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-              {data.youtube_recommendations.slice(0, 3).map((vid, i) => (
-                <a key={i} href={vid.search_url} target="_blank" rel="noreferrer" style={{
-                  display: 'block', textDecoration: 'none', background: 'var(--card-alt)', padding: 16, borderRadius: 16,
-                  border: '1px solid var(--border)', transition: 'all 0.2s', color: 'inherit'
-                }} onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.transform = 'translateY(-2px)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'none'; }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{vid.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>📺 {vid.channel}</div>
-                  
-                  {vid.key_takeaways && vid.key_takeaways.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {vid.key_takeaways.slice(0, 2).map((takeaway, j) => (
-                        <div key={j} style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6 }}>
-                          <span style={{ color: 'var(--primary)' }}>•</span> {takeaway}
-                        </div>
-                      ))}
+              {data.youtube_recommendations.slice(0, 3).map((vid, i) => {
+                const isClicked = clickedVideos.has(i);
+                return (
+                  <a
+                    key={i}
+                    href={vid.search_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => handleVideoClick(i, vid)}
+                    style={{
+                      display: 'block',
+                      textDecoration: 'none',
+                      background: isClicked ? 'rgba(61,155,106,0.08)' : 'var(--card-alt)',
+                      padding: 16,
+                      borderRadius: 16,
+                      border: `2px solid ${isClicked ? 'var(--success)' : 'var(--border)'}`,
+                      transition: 'all 0.2s',
+                      color: 'inherit',
+                      position: 'relative',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isClicked) {
+                        e.currentTarget.style.borderColor = 'var(--primary)';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isClicked) {
+                        e.currentTarget.style.borderColor = 'var(--border)';
+                        e.currentTarget.style.transform = 'none';
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{vid.title}</div>
+                      {isClicked ? (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: 'white',
+                          background: 'var(--success)',
+                          padding: '2px 8px',
+                          borderRadius: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          flexShrink: 0,
+                        }}>
+                          <Check size={11} strokeWidth={3} /> Clicked
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: 'var(--muted)',
+                          background: 'var(--light)',
+                          padding: '2px 8px',
+                          borderRadius: 12,
+                          flexShrink: 0,
+                        }}>
+                          Video {i + 1}
+                        </span>
+                      )}
                     </div>
-                  )}
-                </a>
-              ))}
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📺 {vid.channel}</span>
+                      <ExternalLink size={11} color="var(--muted)" />
+                    </div>
+                    
+                    {vid.key_takeaways && vid.key_takeaways.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {vid.key_takeaways.slice(0, 2).map((takeaway, j) => (
+                          <div key={j} style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6 }}>
+                            <span style={{ color: isClicked ? 'var(--success)' : 'var(--primary)' }}>•</span> {takeaway}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </a>
+                );
+              })}
             </div>
           </div>
         )}
@@ -638,13 +735,82 @@ export default function Notes() {
     }
   };
 
+  // ── Read note tracking ──────────────────────────────────────────────────
+  const handleReadNote = async (note) => {
+    try {
+      await trackSessionActivity({
+        activity_type: 'read_notes',
+        note_id: note.id,
+        subject_id: note.subject?.id,
+      });
+      addToast(`📖 Marked "Read Notes" complete for ${note.subject?.name || 'this subject'}!`, 'success', 2500);
+      window.dispatchEvent(new CustomEvent('study-progress-updated'));
+      window.dispatchEvent(new CustomEvent('schedule-sync-needed'));
+    } catch (e) {
+      console.warn('Failed to track read note:', e);
+    }
+  };
+
+  // ── Track YouTube video clicked in summary modal ─────────────────────────
+  const handleTrackSummaryVideo = async (videoIndex, totalClicked, summaryObj) => {
+    const note = summaryObj?.note;
+    const subjectId = summaryObj?.subject?.id || note?.subject?.id;
+    const noteId = note?.id;
+    const count = Math.min(3, totalClicked);
+
+    try {
+      await trackSessionActivity({
+        activity_type: 'youtube_videos',
+        count: count,
+        note_id: noteId,
+        subject_id: subjectId,
+      });
+
+      window.dispatchEvent(new CustomEvent('study-progress-updated'));
+      window.dispatchEvent(new CustomEvent('schedule-sync-needed'));
+
+      const subjectName = summaryObj?.subject?.name || note?.subject?.name || 'this subject';
+      if (count === 3) {
+        addToast(`🎉 All 3 videos watched! Checklist marked 3/3 green for ${subjectName}!`, 'success', 3000);
+      } else {
+        addToast(`✓ Video ${videoIndex + 1} clicked (${count}/3) for ${subjectName}!`, 'info', 1800);
+      }
+    } catch (err) {
+      console.warn('Track video error:', err);
+    }
+  };
+
+  // ── Flashcard — single note ──────────────────────────────────────────────
+  const handleFlashcardSingle = async (note) => {
+    setGenSingle(`fc-${note.id}`);
+    setGenerationType('flashcards');
+    setGenerating(true);
+    try {
+      const res = await generateFlashcards({
+        note_ids: [note.id],
+        num_cards: 5,
+      });
+      addToast(`Flashcards created for ${note.title}! 🃏 Starting game...`, 'success', 2000);
+      nav(`/flashcards/${res.set_id}`);
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setGenSingle(null);
+      setGenerating(false);
+    }
+  };
+
   // ── Summarize — single note ──────────────────────────────────────────────
   const handleSummarizeSingle = async (note) => {
     setSumSingle(note.id);
     setSummarizing(true);
     try {
       const res = await summarizeNotes({ note_ids: [note.id] });
-      setSummaryData(res.summary_data);
+      setSummaryData({
+        ...res.summary_data,
+        note: note,
+        subject: note.subject,
+      });
       addToast('Summary generated! 📝', 'success');
     } catch (e) {
       addToast(e.message, 'error');
@@ -659,8 +825,14 @@ export default function Notes() {
     if (selected.size === 0) return;
     setSummarizing(true);
     try {
-      const res = await summarizeNotes({ note_ids: Array.from(selected) });
-      setSummaryData(res.summary_data);
+      const selectedNoteIds = Array.from(selected);
+      const res = await summarizeNotes({ note_ids: selectedNoteIds });
+      const firstNote = notes.find(n => selectedNoteIds.includes(n.id));
+      setSummaryData({
+        ...res.summary_data,
+        note: firstNote,
+        subject: firstNote?.subject,
+      });
       addToast('Summary from selected notes generated! 📝', 'success');
       clearSelect();
     } catch (e) {
@@ -799,7 +971,11 @@ export default function Notes() {
 
       {/* ── Summary Modal ── */}
       {summaryData && (
-        <SummaryModal data={summaryData} onClose={() => setSummaryData(null)} />
+        <SummaryModal
+          data={summaryData}
+          onClose={() => setSummaryData(null)}
+          onTrackVideo={handleTrackSummaryVideo}
+        />
       )}
 
       {/* ── Edit Note Modal ── */}
@@ -1219,7 +1395,16 @@ export default function Notes() {
                   <FileIcon type={note.type_group} size={40} />
 
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:3 }}>{note.title}</div>
+                    <div
+                      onClick={() => {
+                        handleReadNote(note);
+                        window.open(note.file_url, '_blank', 'noopener,noreferrer');
+                      }}
+                      style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:3, cursor:'pointer' }}
+                      title="Click to view and read note file"
+                    >
+                      {note.title}
+                    </div>
                     <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{note.original_filename}</span>
                       <span style={{ fontSize:11, color:'var(--muted)' }}>· {note.file_size}</span>
@@ -1244,7 +1429,7 @@ export default function Notes() {
                     {note.latest_quiz && (
                       <button onClick={() => nav(`/quiz/${note.latest_quiz}`)}
                         className="btn btn-ghost btn-sm" style={{ gap:5 }}>
-                        <Award size={13} /> Latest Quiz
+                          <Award size={13} /> Latest Quiz
                       </button>
                     )}
 
@@ -1263,6 +1448,25 @@ export default function Notes() {
                       {genSingle === note.id
                         ? <><span className="spinner" style={{ width:13, height:13, borderWidth:2 }} /> Generating…</>
                         : <><Brain size={13} /> Generate Quiz</>}
+                    </button>
+
+                    <button
+                      onClick={() => handleFlashcardSingle(note)}
+                      disabled={generating || summarizing}
+                      style={{
+                        display:'flex', alignItems:'center', gap:6,
+                        padding:'8px 14px', borderRadius:8, fontSize:12, fontWeight:600,
+                        background: genSingle === `fc-${note.id}` ? 'var(--teal)' : 'var(--card-alt)',
+                        color: genSingle === `fc-${note.id}` ? 'white' : '#2F9E69',
+                        border:'1px solid #2F9E69', cursor: (generating || summarizing) ? 'wait' : 'pointer',
+                        opacity: (generating || summarizing) && genSingle !== `fc-${note.id}` ? 0.5 : 1,
+                        transition:'all 0.15s',
+                      }}
+                      title="Play memory flashcard game with this note"
+                    >
+                      {genSingle === `fc-${note.id}`
+                        ? <><span className="spinner" style={{ width:13, height:13, borderWidth:2 }} /> Generating…</>
+                        : <><Layers size={13} /> Flashcards</>}
                     </button>
 
                     <button
@@ -1287,13 +1491,14 @@ export default function Notes() {
                       href={note.file_url}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => handleReadNote(note)}
                       style={{
                         width:34, height:34, borderRadius:8, background:'var(--light)', color:'var(--text)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
                         transition:'all 0.15s'
                       }}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'var(--light)'}
-                      title="View Note File"
+                      title="View Note File (Ticks 'Read Notes' green)"
                     >
                       <Eye size={14} />
                     </a>

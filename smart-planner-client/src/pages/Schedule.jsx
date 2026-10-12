@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getSchedule, toggleCompletion, generateSchedule, getProgress, exportICal, getProfile } from '../api/client';
+import { getSchedule, toggleCompletion, updateSessionChecklist, generateSchedule, getProgress, exportICal, getProfile } from '../api/client';
 import { useToast } from '../components/Toast';
 import ScheduleDay from '../components/ScheduleDay';
 import { exportSchedulePDF } from '../utils/exportPDF';
@@ -13,33 +13,7 @@ const GEN_STEPS = [
   '✨ Almost ready…',
 ];
 
-// Function to calculate stress from schedule data
-const calculateStressFromSchedule = (scheduleData) => {
-  if (!scheduleData || !scheduleData.days) return { score: 0, level: 'low' };
-
-  // Get all sessions across all days
-  const allSessions = scheduleData.days.flatMap(day => day.sessions);
-  const total = allSessions.length;
-
-  if (total === 0) return { score: 0, level: 'low' };
-
-  const completed = allSessions.filter(s => s.is_completed).length;
-  const incomplete = total - completed;
-
-  // Stress = percentage of tasks NOT completed
-  const stressScore = Math.round((incomplete / total) * 100);
-
-  // Determine stress level
-  let stressLevel = 'low';
-  if (stressScore <= 35) stressLevel = 'low';
-  else if (stressScore <= 60) stressLevel = 'moderate';
-  else if (stressScore <= 80) stressLevel = 'high';
-  else stressLevel = 'critical';
-
-  return { score: stressScore, level: stressLevel };
-};
-
-export default function Schedule({ onStressUpdate }) {
+export default function Schedule() {
   const [schedule, setSchedule] = useState(null);
   const [stats, setStats] = useState(null);
   const [subjects, setSubjects] = useState([]);
@@ -66,11 +40,7 @@ export default function Schedule({ onStressUpdate }) {
       setSubjects(progressRes.subjects);
       setProfile(profileRes.user);
 
-      // Calculate and update stress from schedule
-      if (scheduleRes.schedule) {
-        const stress = calculateStressFromSchedule(scheduleRes.schedule);
-        onStressUpdate?.({ level: stress.level, score: stress.score });
-      }
+
     } catch (e) {
       addToast(e.message, 'error');
     } finally {
@@ -87,7 +57,11 @@ export default function Schedule({ onStressUpdate }) {
       load();
     };
     window.addEventListener('study-progress-updated', handleProgressUpdate);
-    return () => window.removeEventListener('study-progress-updated', handleProgressUpdate);
+    window.addEventListener('schedule-sync-needed', handleProgressUpdate);
+    return () => {
+      window.removeEventListener('study-progress-updated', handleProgressUpdate);
+      window.removeEventListener('schedule-sync-needed', handleProgressUpdate);
+    };
   }, []);
 
   const handleGenerate = async () => {
@@ -108,9 +82,7 @@ export default function Schedule({ onStressUpdate }) {
       setStats(progressRes.stats);
       setSubjects(progressRes.subjects);
 
-      // Calculate and update stress
-      const stress = calculateStressFromSchedule(res.schedule);
-      onStressUpdate?.({ level: stress.level, score: stress.score });
+
 
       addToast('Schedule generated successfully! 🎉', 'success', 5000);
     } catch (e) {
@@ -137,19 +109,39 @@ export default function Schedule({ onStressUpdate }) {
         sessions: day.sessions.map(session => {
           if (session.id === sessionId) {
             isCurrentlyCompleted = session.is_completed;
-            return { ...session, is_completed: !session.is_completed };
+            const nextDone = !session.is_completed;
+            return {
+              ...session,
+              is_completed: nextDone,
+              checklist: {
+                flashcard_game: nextDone,
+                youtube_videos: nextDone ? 3 : 0,
+                read_notes: nextDone,
+              },
+            };
           }
           return session;
         }),
       })),
     };
 
-    const stress = calculateStressFromSchedule(updatedSchedule);
-    onStressUpdate?.({ level: stress.level, score: stress.score });
     setSchedule(updatedSchedule);
 
     try {
       const res = await toggleCompletion(sessionId);
+      if (res.checklist) {
+        setSchedule(prev => prev ? ({
+          ...prev,
+          days: prev.days.map(d => ({
+            ...d,
+            sessions: d.sessions.map(s =>
+              s.id === sessionId
+                ? { ...s, is_completed: res.is_completed, checklist: res.checklist }
+                : s
+            ),
+          })),
+        }) : prev);
+      }
       addToast(
         res.is_completed ? '✓ Session marked complete!' : 'Session unmarked.',
         res.is_completed ? 'success' : 'info',
@@ -160,18 +152,77 @@ export default function Schedule({ onStressUpdate }) {
       addToast(e.message, 'error');
       
       // Revert on failure
-      const revertedSchedule = {
-        ...updatedSchedule,
-        days: updatedSchedule.days.map(day => ({
+      load();
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const handleUpdateChecklist = async (sessionId, checklistData) => {
+    setToggling(sessionId);
+
+    if (!schedule) return;
+
+    // Optimistically update
+    setSchedule(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        days: prev.days.map(day => ({
           ...day,
-          sessions: day.sessions.map(session => 
-            session.id === sessionId ? { ...session, is_completed: isCurrentlyCompleted } : session
-          ),
+          sessions: day.sessions.map(session => {
+            if (session.id === sessionId) {
+              const current = session.checklist || {
+                flashcard_game: false,
+                youtube_videos: 0,
+                read_notes: false,
+              };
+              const updated = { ...current, ...checklistData };
+              const isCompleted =
+                Boolean(updated.flashcard_game) &&
+                Number(updated.youtube_videos || 0) >= 3 &&
+                Boolean(updated.read_notes);
+              return {
+                ...session,
+                checklist: updated,
+                is_completed: isCompleted,
+              };
+            }
+            return session;
+          }),
         })),
       };
-      const revertedStress = calculateStressFromSchedule(revertedSchedule);
-      onStressUpdate?.({ level: revertedStress.level, score: revertedStress.score });
-      setSchedule(revertedSchedule);
+    });
+
+    try {
+      const res = await updateSessionChecklist(sessionId, checklistData);
+      setSchedule(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          days: prev.days.map(day => ({
+            ...day,
+            sessions: day.sessions.map(session => {
+              if (session.id === sessionId) {
+                return {
+                  ...session,
+                  is_completed: res.is_completed,
+                  checklist: res.checklist,
+                };
+              }
+              return session;
+            }),
+          })),
+        };
+      });
+
+      if (res.is_completed) {
+        addToast('🎉 All 3 conditions met! Session completed!', 'success', 2500);
+      }
+      window.dispatchEvent(new CustomEvent('schedule-sync-needed'));
+    } catch (e) {
+      addToast(e.message, 'error');
+      load();
     } finally {
       setToggling(null);
     }
@@ -365,6 +416,7 @@ export default function Schedule({ onStressUpdate }) {
               key={idx}
               day={day}
               onToggle={handleToggle}
+              onUpdateChecklist={handleUpdateChecklist}
               loadingId={toggling}
             />
           ))}

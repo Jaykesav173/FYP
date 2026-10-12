@@ -7,6 +7,8 @@ use App\Models\Schedule;
 use App\Models\StudySession;
 use App\Models\Subject;
 use App\Models\Completion;
+use App\Models\Note;
+use App\Models\FlashcardSet;
 use App\Services\GeminiService;
 use App\Traits\CalculatesStress;
 use Illuminate\Http\JsonResponse;
@@ -36,52 +38,316 @@ class ScheduleController extends Controller
         ]);
     }
 
+    // ── Completion Checklist Helpers ──────────────────────────────────────────
+    private function defaultChecklist(bool $completed = false): array
+    {
+        return [
+            'flashcard_game' => $completed,
+            'youtube_videos' => $completed ? 3 : 0,
+            'read_notes'     => $completed,
+        ];
+    }
+
+    private function isChecklistComplete(array $checklist): bool
+    {
+        return !empty($checklist['flashcard_game'])
+            && (int)($checklist['youtube_videos'] ?? 0) >= 3
+            && !empty($checklist['read_notes']);
+    }
+
     // ── POST /api/sessions/{id}/toggle ─────────────────────────────────────
-  /**
- * POST /api/sessions/{id}/toggle
- */
-public function toggleCompletion(Request $request, int $id): JsonResponse
-{
-    $userId = $request->user()->id;
-    
-    $session = StudySession::where('id', $id)
-        ->whereHas('schedule', function($q) use ($userId) {
-            $q->where('user_id', $userId)->where('is_active', true);
-        })
-        ->first();
-    
-    if (!$session) {
-        return response()->json(['success' => false, 'message' => 'Session not found.'], 404);
-    }
-    
-    // Toggle completion
-    $completion = $session->completion;
-    if ($completion) {
-        $completion->update(['is_completed' => !$completion->is_completed]);
-        $isCompleted = $completion->is_completed;
-    } else {
-        $completion = Completion::create([
-            'study_session_id' => $session->id,
-            'user_id' => $userId,
-            'is_completed' => true,
+    /**
+     * Complete All / Toggle session completion
+     */
+    public function toggleCompletion(Request $request, int $id): JsonResponse
+    {
+        $userId = $request->user()->id;
+        
+        $session = StudySession::where('id', $id)
+            ->whereHas('schedule', function($q) use ($userId) {
+                $q->where('user_id', $userId)->where('is_active', true);
+            })
+            ->first();
+        
+        if (!$session) {
+            return response()->json(['success' => false, 'message' => 'Session not found.'], 404);
+        }
+        
+        // Toggle completion
+        $completion = $session->completion;
+        $newCompleted = $completion ? !$completion->is_completed : true;
+        $checklist = $this->defaultChecklist($newCompleted);
+
+        if ($completion) {
+            $completion->update([
+                'is_completed' => $newCompleted,
+                'checklist'    => $checklist,
+                'completed_at' => $newCompleted ? ($completion->completed_at ?? now()) : null,
+            ]);
+        } else {
+            $completion = Completion::create([
+                'study_session_id' => $session->id,
+                'user_id'          => $userId,
+                'is_completed'     => $newCompleted,
+                'checklist'        => $checklist,
+                'completed_at'     => $newCompleted ? now() : null,
+            ]);
+        }
+        
+        // Recalculate stress/metrics
+        $schedule = $session->schedule;
+        $this->recalculateStress($schedule);
+        $schedule->refresh();
+        
+        return response()->json([
+            'success'      => true,
+            'is_completed' => $newCompleted,
+            'checklist'    => $checklist,
+            'stress_score' => $schedule->stress_score,
+            'stress_level' => $schedule->stress_level,
         ]);
-        $isCompleted = true;
     }
-    
-    // ── RECALCULATE STRESS FROM SCRATCH ──
-    $schedule = $session->schedule;
-    $this->recalculateStress($schedule);
-    
-    // Refresh to get updated values
-    $schedule->refresh();
-    
-    return response()->json([
-        'success' => true,
-        'is_completed' => $isCompleted,
-        'stress_score' => $schedule->stress_score,
-        'stress_level' => $schedule->stress_level,
-    ]);
-}
+
+    /**
+     * POST /api/sessions/{id}/checklist
+     * Update individual condition in the completion checklist
+     */
+    public function updateChecklist(Request $request, int $id): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $session = StudySession::where('id', $id)
+            ->whereHas('schedule', function($q) use ($userId) {
+                $q->where('user_id', $userId)->where('is_active', true);
+            })
+            ->first();
+
+        if (!$session) {
+            return response()->json(['success' => false, 'message' => 'Session not found.'], 404);
+        }
+
+        $completion = $session->completion;
+        $currentChecklist = $completion?->checklist ?? $this->defaultChecklist($completion?->is_completed ?? false);
+
+        if ($request->has('checklist') && is_array($request->input('checklist'))) {
+            $currentChecklist = array_merge($currentChecklist, $request->input('checklist'));
+        } else {
+            if ($request->has('flashcard_game')) {
+                $currentChecklist['flashcard_game'] = (bool) $request->input('flashcard_game');
+            }
+            if ($request->has('youtube_videos')) {
+                $currentChecklist['youtube_videos'] = max(0, min(3, (int) $request->input('youtube_videos')));
+            }
+            if ($request->has('read_notes')) {
+                $currentChecklist['read_notes'] = (bool) $request->input('read_notes');
+            }
+        }
+
+        $currentChecklist['youtube_videos'] = max(0, min(3, (int) ($currentChecklist['youtube_videos'] ?? 0)));
+        $currentChecklist['flashcard_game'] = (bool) ($currentChecklist['flashcard_game'] ?? false);
+        $currentChecklist['read_notes']     = (bool) ($currentChecklist['read_notes'] ?? false);
+
+        $isCompleted = $this->isChecklistComplete($currentChecklist);
+
+        if ($completion) {
+            $completion->update([
+                'checklist'    => $currentChecklist,
+                'is_completed' => $isCompleted,
+                'completed_at' => $isCompleted ? ($completion->completed_at ?? now()) : null,
+            ]);
+        } else {
+            $completion = Completion::create([
+                'study_session_id' => $session->id,
+                'user_id'          => $userId,
+                'checklist'        => $currentChecklist,
+                'is_completed'     => $isCompleted,
+                'completed_at'     => $isCompleted ? now() : null,
+            ]);
+        }
+
+        $schedule = $session->schedule;
+        $this->recalculateStress($schedule);
+        $schedule->refresh();
+
+        return response()->json([
+            'success'      => true,
+            'is_completed' => $isCompleted,
+            'checklist'    => $currentChecklist,
+            'stress_score' => $schedule->stress_score,
+            'stress_level' => $schedule->stress_level,
+        ]);
+    }
+
+    /**
+     * POST /api/sessions/track-activity
+     * Automatically update session checklist based on user activity:
+     * - read_notes (when user opens/reads a note)
+     * - youtube_videos (when user clicks youtube video links in summary)
+     * - flashcard_game (when user plays/completes flashcard deck)
+     */
+    public function trackActivity(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+        $activityType = $request->input('activity_type'); // 'read_notes', 'youtube_videos', 'flashcard_game'
+
+        if (!in_array($activityType, ['read_notes', 'youtube_videos', 'flashcard_game'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid activity type. Must be read_notes, youtube_videos, or flashcard_game.',
+            ], 422);
+        }
+
+        // 1. Resolve subject_id
+        $subjectId = $request->input('subject_id');
+
+        if (!$subjectId && $request->filled('note_id')) {
+            $note = Note::where('id', $request->input('note_id'))->first();
+            $subjectId = $note?->subject_id;
+        }
+
+        if (!$subjectId && $request->filled('flashcard_set_id')) {
+            $set = FlashcardSet::where('id', $request->input('flashcard_set_id'))->first();
+            if ($set) {
+                if ($set->note_id) {
+                    $note = Note::where('id', $set->note_id)->first();
+                    $subjectId = $note?->subject_id;
+                } elseif (!empty($set->note_ids)) {
+                    $firstNoteId = is_array($set->note_ids) ? $set->note_ids[0] : null;
+                    if ($firstNoteId) {
+                        $note = Note::where('id', $firstNoteId)->first();
+                        $subjectId = $note?->subject_id;
+                    }
+                }
+            }
+        }
+
+        // 2. Resolve study session(s)
+        $schedule = Schedule::where('user_id', $userId)
+            ->where('is_active', true)
+            ->with(['studySessions' => function($q) {
+                $q->with(['subject', 'completion']);
+            }])
+            ->latest()
+            ->first();
+
+        if (!$schedule) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No active schedule found.',
+            ]);
+        }
+
+        // If specific session_id is provided, use that
+        $targetSessions = collect();
+        if ($request->filled('session_id')) {
+            $session = $schedule->studySessions->firstWhere('id', (int) $request->input('session_id'));
+            if ($session) {
+                $targetSessions->push($session);
+            }
+        }
+
+        // Otherwise find sessions by subject_id
+        if ($targetSessions->isEmpty() && $subjectId) {
+            $subjectSessions = $schedule->studySessions->where('subject_id', (int) $subjectId);
+
+            // First: sessions for today
+            $today = Carbon::today()->toDateString();
+            $todaySessions = $subjectSessions->filter(function($s) use ($today) {
+                return $s->session_date->toDateString() === $today;
+            });
+
+            if ($todaySessions->isNotEmpty()) {
+                // If there are uncompleted sessions today, target them; otherwise target all today
+                $uncompletedToday = $todaySessions->filter(fn($s) => !$s->completion?->is_completed);
+                $targetSessions = $uncompletedToday->isNotEmpty() ? $uncompletedToday : $todaySessions;
+            } else {
+                // Next: upcoming uncompleted sessions
+                $upcomingUncompleted = $subjectSessions->filter(function($s) use ($today) {
+                    return $s->session_date->toDateString() >= $today && !$s->completion?->is_completed;
+                })->sortBy('session_date');
+
+                if ($upcomingUncompleted->isNotEmpty()) {
+                    $targetSessions->push($upcomingUncompleted->first());
+                } else {
+                    // Fallback: any uncompleted session for this subject
+                    $anyUncompleted = $subjectSessions->filter(fn($s) => !$s->completion?->is_completed)->sortBy('session_date');
+                    if ($anyUncompleted->isNotEmpty()) {
+                        $targetSessions->push($anyUncompleted->first());
+                    } elseif ($subjectSessions->isNotEmpty()) {
+                        // All completed, target the closest one
+                        $targetSessions->push($subjectSessions->first());
+                    }
+                }
+            }
+        }
+
+        if ($targetSessions->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No matching study session found for this subject.',
+            ]);
+        }
+
+        $updatedResults = [];
+
+        foreach ($targetSessions as $session) {
+            $completion = $session->completion;
+            $checklist = $completion?->checklist ?? $this->defaultChecklist($completion?->is_completed ?? false);
+
+            if ($activityType === 'read_notes') {
+                $checklist['read_notes'] = true;
+            } elseif ($activityType === 'youtube_videos') {
+                $count = $request->input('count', 3);
+                $currentCount = (int) ($checklist['youtube_videos'] ?? 0);
+                $checklist['youtube_videos'] = max($currentCount, min(3, (int) $count));
+            } elseif ($activityType === 'flashcard_game') {
+                $checklist['flashcard_game'] = true;
+            }
+
+            $checklist['youtube_videos'] = max(0, min(3, (int) ($checklist['youtube_videos'] ?? 0)));
+            $checklist['flashcard_game'] = (bool) ($checklist['flashcard_game'] ?? false);
+            $checklist['read_notes']     = (bool) ($checklist['read_notes'] ?? false);
+
+            $isCompleted = $this->isChecklistComplete($checklist);
+
+            if ($completion) {
+                $completion->update([
+                    'checklist'    => $checklist,
+                    'is_completed' => $isCompleted,
+                    'completed_at' => $isCompleted ? ($completion->completed_at ?? now()) : null,
+                ]);
+            } else {
+                $completion = Completion::create([
+                    'study_session_id' => $session->id,
+                    'user_id'          => $userId,
+                    'checklist'        => $checklist,
+                    'is_completed'     => $isCompleted,
+                    'completed_at'     => $isCompleted ? now() : null,
+                ]);
+            }
+
+            $updatedResults[] = [
+                'session_id'   => $session->id,
+                'subject_id'   => $session->subject_id,
+                'subject_name' => $session->subject?->name,
+                'checklist'    => $checklist,
+                'is_completed' => $isCompleted,
+            ];
+        }
+
+        $this->recalculateStress($schedule);
+        $schedule->refresh();
+
+        return response()->json([
+            'success'       => true,
+            'message'       => "Activity {$activityType} recorded successfully.",
+            'activity_type' => $activityType,
+            'updated'       => $updatedResults,
+            'first'         => $updatedResults[0] ?? null,
+            'stress_score'  => $schedule->stress_score,
+            'stress_level'  => $schedule->stress_level,
+        ]);
+    }
 
 
 
@@ -170,9 +436,10 @@ public function toggleCompletion(Request $request, int $id): JsonResponse
         foreach ($aiSchedule['days'] ?? [] as $day) {
             // Calculate correct day name from the date
             $correctDayName = Carbon::parse($day['date'])->format('l');
-            
-            foreach ($day['sessions'] ?? [] as $session) {
 
+            // Collect valid matched sessions for this day
+            $validSessions = [];
+            foreach ($day['sessions'] ?? [] as $session) {
                 // Match subject name to DB record
                 $subject = $subjects->first(function ($s) use ($session) {
                     return strtolower(trim($s->name)) === strtolower(trim($session['subject']));
@@ -190,15 +457,62 @@ public function toggleCompletion(Request $request, int $id): JsonResponse
 
                 if (!$subject) continue;
 
-                $pred = $predictions[$session['subject']] ?? null;
+                $rawTime = trim($session['time'] ?? '09:00');
+                if (preg_match('/^\d{1,2}:\d{2}$/', $rawTime)) {
+                    $parts = explode(':', $rawTime);
+                    $formattedTime = sprintf('%02d:%02d', (int)$parts[0], (int)$parts[1]);
+                } else {
+                    $formattedTime = '09:00';
+                }
+
+                $validSessions[] = [
+                    'subject'          => $subject,
+                    'session'          => $session,
+                    'time'             => $formattedTime,
+                    'duration_minutes' => (int) ($session['duration'] ?? 60),
+                ];
+            }
+
+            // Sort chronologically by start time
+            usort($validSessions, fn($a, $b) => strcmp($a['time'], $b['time']));
+
+            // Resolve duplicate and overlapping session times
+            $lastEndMinutes = 0;
+            foreach ($validSessions as &$vs) {
+                [$hour, $min] = explode(':', $vs['time']);
+                $startMinutes = ((int) $hour * 60) + (int) $min;
+                $duration = max(30, min(180, $vs['duration_minutes']));
+
+                // If collision or overlap with prior session (needs at least 10 min break)
+                if ($lastEndMinutes > 0 && $startMinutes < ($lastEndMinutes + 10)) {
+                    $startMinutes = $lastEndMinutes + 15; // 15-min break after previous session
+                    $newHour = (int) floor($startMinutes / 60);
+                    $newMin  = $startMinutes % 60;
+                    if ($newHour >= 24) {
+                        $newHour = 22;
+                        $newMin = 0;
+                        $startMinutes = $newHour * 60;
+                    }
+                    $vs['time'] = sprintf('%02d:%02d', $newHour, $newMin);
+                }
+
+                $lastEndMinutes = $startMinutes + $duration;
+            }
+            unset($vs);
+
+            // Save non-overlapping study sessions
+            foreach ($validSessions as $vs) {
+                $session = $vs['session'];
+                $subject = $vs['subject'];
+                $pred    = $predictions[$session['subject']] ?? null;
 
                 StudySession::create([
                     'schedule_id'           => $schedule->id,
                     'subject_id'            => $subject->id,
                     'session_date'          => $day['date'],
                     'day_name'              => $correctDayName,
-                    'start_time'            => $session['time'] . ':00',
-                    'duration_minutes'      => $session['duration'],
+                    'start_time'            => $vs['time'] . ':00',
+                    'duration_minutes'      => $vs['duration_minutes'],
                     'priority'              => $session['priority'] ?? 'medium',
                     'note'                  => $session['note']     ?? null,
                     'predicted_hours'       => $pred['predictedHours'] ?? null,
@@ -246,6 +560,11 @@ public function toggleCompletion(Request $request, int $id): JsonResponse
                         'prediction_confidence' => $s->prediction_confidence,
                         'is_completed'          => $s->completion?->is_completed ?? false,
                         'completion_id'         => $s->completion?->id,
+                        'checklist'             => $s->completion?->checklist ?? [
+                            'flashcard_game' => (bool) ($s->completion?->is_completed ?? false),
+                            'youtube_videos' => ($s->completion?->is_completed ?? false) ? 3 : 0,
+                            'read_notes'     => (bool) ($s->completion?->is_completed ?? false),
+                        ],
                     ])->values(),
                 ];
             })->values();

@@ -27,7 +27,7 @@ const NAV = [
   { to: '/profile', icon: UserCircle, label: 'Profile & Settings' },
 ];
 
-export default function Layout({ children, stress }) {
+export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const nav              = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -53,11 +53,7 @@ export default function Layout({ children, stress }) {
     nav('/login');
   };
 
-  const stressColors = {
-    low: '#3D9B6A', moderate: '#C97D1A',
-    high: '#E06020', critical: '#C0483E',
-  };
-  const sc = stressColors[stress?.level] ?? null;
+
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', position: 'relative' }}>
@@ -166,40 +162,7 @@ export default function Layout({ children, stress }) {
           ))}
         </nav>
 
-        {/* ── Stress widget ── */}
-        {stress?.level && (
-          <div style={{
-            margin: '0 10px 10px',
-            padding: '11px 13px',
-            borderRadius: 8,
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.07)',
-          }}>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', marginBottom: 7 }}>
-              STRESS INDEX
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: sc, boxShadow: `0 0 6px ${sc}`,
-              }} />
-              <span style={{ color: 'white', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
-                {stress.level}
-              </span>
-              <span className="mono" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginLeft: 'auto' }}>
-                {stress.score}
-              </span>
-            </div>
-            <div style={{ height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-              <div style={{
-                height: '100%', borderRadius: 2,
-                width: `${stress.score}%`,
-                background: sc,
-                transition: 'width 1.2s ease',
-              }} />
-            </div>
-          </div>
-        )}
+
 
         {/* ── Actions ── */}
         <div style={{ padding: '8px 10px 14px' }}>

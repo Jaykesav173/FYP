@@ -119,13 +119,29 @@ class GeminiService
     {
         $clean   = preg_replace('/```json\s*|\s*```/', '', $text);
         $clean   = trim($clean);
+
+        // Remove dangerous control characters (keep \n \r \t which are valid JSON whitespace)
+        $clean   = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $clean);
+
         $decoded = json_decode($clean, true);
 
         if (!is_array($decoded)) {
-            // Try extracting JSON from response
+            // Try extracting just the JSON object
             preg_match('/\{.*\}/s', $clean, $matches);
             if (!empty($matches[0])) {
                 $decoded = json_decode($matches[0], true);
+            }
+        }
+
+        if (!is_array($decoded)) {
+            // Last resort: escape unescaped newlines INSIDE string values only
+            $sanitized = preg_replace_callback('/"((?:[^"\\\\]|\\\\.)*)"/s', function ($m) {
+                return '"' . str_replace(["\r\n", "\r", "\n"], '\\n', $m[1]) . '"';
+            }, $clean);
+            $decoded = json_decode($sanitized, true);
+
+            if (!is_array($decoded)) {
+                Log::warning('parseJson all attempts failed: ' . json_last_error_msg() . ' | Text snippet: ' . mb_substr($clean, 0, 200));
             }
         }
 
@@ -134,41 +150,43 @@ class GeminiService
 
     // ── Single Combined Call ───────────────────────────────────────────────
     public function generateFullPlan(array $subjects, string $today, array $blockedTimes = []): ?array
-{
-    $subjectList = collect($subjects)->map(function ($s) {
-        return "{$s['name']} (deadline: {$s['deadline']}, difficulty: {$s['difficulty']}/4, estimated: {$s['estimated_hours']}h)";
-    })->implode('; ');
+    {
+        $subjectList = collect($subjects)->map(function ($s) {
+            return "{$s['name']} (due {$s['deadline']}, diff {$s['difficulty']}/4, est {$s['estimated_hours']}h)";
+        })->implode('; ');
 
-    // ── Format blocked times for prompt ───────────────────────────────────
-    // ── Format blocked times for prompt ───────────────────────────────────
-$blockedStr = '';
-if (!empty($blockedTimes)) {
-    $blockedStr = "\n\nBLOCKED / UNAVAILABLE TIMES (never schedule during these):";
-    foreach ($blockedTimes as $b) {
-        if (!($b['is_active'] ?? true)) continue;
-        $days    = implode(', ', $b['days']);
-        $start   = $b['start_time'];
-        $end     = $b['end_time'];
-
-        // Handle overnight blocks (e.g. 22:00 to 07:00)
-        $isOvernight = $start > $end;
-        if ($isOvernight) {
-            $blockedStr .= "\n- {$b['label']} (OVERNIGHT): {$days} from {$start} to midnight AND midnight to {$end} next morning";
-        } else {
-            $blockedStr .= "\n- {$b['label']}: {$days} from {$start} to {$end}";
+        // Compact blocked times formatting
+        $blockedStr = '';
+        if (!empty($blockedTimes)) {
+            $activeBlocks = array_filter($blockedTimes, fn($b) => ($b['is_active'] ?? true));
+            if (!empty($activeBlocks)) {
+                $blockItems = [];
+                foreach ($activeBlocks as $b) {
+                    $days = implode(',', array_map(fn($d) => substr($d, 0, 3), $b['days'] ?? []));
+                    $blockItems[] = "{$b['label']}: {$days} {$b['start_time']}-{$b['end_time']}";
+                }
+                $blockedStr = "\nBlocked times (NEVER schedule inside these): " . implode('; ', $blockItems) . '.';
+            }
         }
-    }
-    $blockedStr .= "\nCRITICAL: Never place ANY session inside these time ranges.";
-}
 
-    $system = "You are an academic study planner AI. You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no text before or after the JSON.";
+        $endDate = date('Y-m-d', strtotime($today . ' +6 days'));
 
-    $user = "Today is {$today}. Subjects: {$subjectList}.{$blockedStr}
+        $system = "You are an expert study planner. Output ONLY raw valid JSON matching the requested schema. No markdown, no commentary.";
 
-Return ONLY this JSON (no markdown, no extra text):
+        $user = "Create an optimal 7-day study plan from {$today} to {$endDate}.
+Subjects: {$subjectList}.{$blockedStr}
+
+Rules:
+1. Schedule 1 to 3 study sessions per day, 30 to 120 minutes each.
+2. STRICTLY NO OVERLAPPING SESSIONS: Each session on the same day must start strictly AFTER the previous session ends (start time + duration + at least 15 min break). Never reuse the same start time on the same date.
+3. Order sessions chronologically by start time.
+4. Never schedule inside blocked times.
+5. Prioritize closer deadlines and higher difficulties.
+
+Return ONLY this JSON:
 {
   \"schedule\": {
-    \"summary\": \"Brief summary of the plan\",
+    \"summary\": \"1-sentence summary of the plan\",
     \"days\": [
       {
         \"date\": \"YYYY-MM-DD\",
@@ -178,59 +196,29 @@ Return ONLY this JSON (no markdown, no extra text):
             \"time\": \"HH:MM\",
             \"duration\": 60,
             \"priority\": \"high/medium/low\",
-            \"note\": \"Brief instruction\"
+            \"note\": \"Specific focus note\"
           }
         ]
       }
     ]
   },
-  \"stress\": {
-    \"level\": \"moderate\",
-    \"score\": 45,
-    \"message\": \"Personalized message.\",
-    \"tips\": [\"tip 1\", \"tip 2\", \"tip 3\"]
-  },
-  \"insight\": \"2-3 sentences of warm personalized advice.\"
-}
+  \"insight\": \"1-2 sentences of personalized, encouraging study advice.\"
+}";
 
-STRICT STRESS CALCULATION RULES (FOLLOW EXACTLY):
-- Calculate stress score based on these EXACT weights:
-  * Each subject: +10 points (max 40)
-  * Deadline within 7 days: +15 points per subject
-  * Deadline overdue: +25 points per subject
-  * Difficulty (easy=0, medium=10, hard=20, very_hard=30)
-  * Study hours per day over 4h: +5 per extra hour
-  * Total weekly hours over 20h: +20 points
-  * Rest days missing: +15 points
+        $response = $this->chat($system, $user, 2000);
+        if (!$response) return null;
 
-- Stress levels based on SCORE ONLY:
-  * low = 0-35
-  * moderate = 36-60
-  * high = 61-80
-  * critical = 81-100
+        $result = $this->parseJson($response);
 
-- Example calculation:
-  * 3 subjects (30) + deadlines in 7 days (15) + medium difficulty (10) + 25h/week (20) = 75 → high
-
-- message: Short personalized advice based on the score
-- tips: 3 specific actionable wellness tips
-
-Return ONLY JSON, no other text.";
-
-    $response = $this->chat($system, $user, 3000);
-    if (!$response) return null;
-
-    $result = $this->parseJson($response);
-
-    if (!$result) {
-        preg_match('/\{.*\}/s', $response, $matches);
-        if (!empty($matches[0])) {
-            $result = json_decode($matches[0], true);
+        if (!$result) {
+            preg_match('/\{.*\}/s', $response, $matches);
+            if (!empty($matches[0])) {
+                $result = json_decode($matches[0], true);
+            }
         }
-    }
 
-    return $result;
-}
+        return $result;
+    }
 // ── Generate Quiz from text content ───────────────────────────────────────
 public function generateQuiz(
     string $content,

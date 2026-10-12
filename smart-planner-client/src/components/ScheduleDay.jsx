@@ -1,7 +1,7 @@
 import TaskItem from './TaskItem';
 import ProgressBar from './ProgressBar';
 
-export default function ScheduleDay({ day, onToggle, loadingId }) {
+export default function ScheduleDay({ day, onToggle, onUpdateChecklist, loadingId }) {
   const { date, day: dayName, sessions = [], totalMinutes } = day;
 
   const today     = new Date().toISOString().split('T')[0];
@@ -85,6 +85,7 @@ export default function ScheduleDay({ day, onToggle, loadingId }) {
               <TaskItem
                 session={session}
                 onToggle={onToggle}
+                onUpdateChecklist={onUpdateChecklist}
                 loading={loadingId === session.id}
               />
             </div>

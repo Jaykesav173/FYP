@@ -29,7 +29,7 @@ function SkeletonCard() {
   );
 }
 
-export default function Dashboard({ onStressUpdate }) {
+export default function Dashboard() {
   const [stats,     setStats]     = useState(null);
   const [subjects,  setSubjects]  = useState([]);
   const [schedule,  setSchedule]  = useState(null);
@@ -56,7 +56,7 @@ export default function Dashboard({ onStressUpdate }) {
       setSubjects(progressRes.subjects);
       setSchedule(scheduleRes.schedule);
       setDueQuizzes(dueRes.quizzes || []);
-      onStressUpdate?.({ level: progressRes.stats.stress_level, score: progressRes.stats.stress_score });
+
     } catch (e) {
       addToast(e.message, 'error');
     } finally {
@@ -273,20 +273,8 @@ export default function Dashboard({ onStressUpdate }) {
             </div>
           )}
 
-          {/* Wellness tips */}
-          {!loading && stats?.stress_tips?.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '1.5px', marginBottom: 8 }}>
-                WELLNESS TIPS
-              </div>
-              {stats.stress_tips.slice(0, 2).map((tip, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'rgba(255,255,255,0.65)', marginBottom: 6, lineHeight: 1.6 }}>
-                  <span style={{ color: 'var(--accent-light)', flexShrink: 0 }}>→</span>
-                  {tip}
-                </div>
-              ))}
-            </div>
-          )}
+
+
         </div>
 
         {/* Upcoming Deadlines */}

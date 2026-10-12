@@ -89,16 +89,30 @@ class FlashcardController extends Controller
     {
         $set = FlashcardSet::where('id', $id)
             ->where('user_id', $request->user()->id)
-            ->with('flashcards')
+            ->with(['flashcards', 'note.subject'])
             ->first();
 
         if (!$set) {
             return response()->json(['success' => false, 'message' => 'Set not found.'], 404);
         }
 
+        $subject = $set->note?->subject;
+        if (!$subject && !empty($set->note_ids)) {
+            $firstNote = Note::with('subject')->find($set->note_ids[0]);
+            $subject = $firstNote?->subject;
+        }
+
+        $setData = $set->toArray();
+        if ($subject) {
+            $setData['subject'] = [
+                'id'   => $subject->id,
+                'name' => $subject->name,
+            ];
+        }
+
         return response()->json([
             'success' => true,
-            'set'     => $set,
+            'set'     => $setData,
         ]);
     }
 }

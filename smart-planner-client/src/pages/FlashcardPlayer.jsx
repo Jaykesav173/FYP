@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getFlashcardSet } from '../api/client';
+import { getFlashcardSet, trackSessionActivity } from '../api/client';
 import { useToast } from '../components/Toast';
-import { ArrowLeft, RefreshCw, Layers } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Layers, CheckCircle } from 'lucide-react';
 
 export default function FlashcardPlayer() {
   const { id } = useParams();
@@ -19,6 +19,7 @@ export default function FlashcardPlayer() {
   const [matchedPairs, setMatchedPairs] = useState(new Set());
   const [moves, setMoves] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasTrackedRef = useRef(false);
   
   useEffect(() => {
     getFlashcardSet(id)
@@ -62,6 +63,25 @@ export default function FlashcardPlayer() {
     if (isProcessing) return;
     if (flippedCardIds.includes(card.id)) return;
     if (matchedPairs.has(card.pairId)) return;
+
+    // Track activity as soon as user plays
+    if (!hasTrackedRef.current && set) {
+      hasTrackedRef.current = true;
+      const subjectId = set.subject?.id || set.note?.subject?.id;
+      const noteId = set.note_id || (Array.isArray(set.note_ids) ? set.note_ids[0] : null);
+      trackSessionActivity({
+        activity_type: 'flashcard_game',
+        flashcard_set_id: set.id,
+        note_id: noteId,
+        subject_id: subjectId,
+      }).then(() => {
+        addToast(`🃏 Marked "Flashcard Game" complete for ${set.subject?.name || set.note?.subject?.name || 'this subject'}!`, 'success', 2500);
+        window.dispatchEvent(new CustomEvent('study-progress-updated'));
+        window.dispatchEvent(new CustomEvent('schedule-sync-needed'));
+      }).catch(err => {
+        console.warn('Could not auto-track flashcard activity:', err);
+      });
+    }
 
     const newFlippedIds = [...flippedCardIds, card.id];
     setFlippedCardIds(newFlippedIds);
@@ -203,11 +223,22 @@ export default function FlashcardPlayer() {
         <h2 style={{ fontSize: 32, fontWeight: 700, marginBottom: 10 }}>Game Complete! 🎉</h2>
         <p style={{ color: 'var(--muted)', marginBottom: 30 }}>You matched all {set.flashcards.length} pairs!</p>
         
-        <div style={{ display: 'flex', gap: 20, marginBottom: 40 }}>
+        <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
           <div style={{ textAlign: 'center', padding: '16px 32px', background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--primary)' }}>{moves}</div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>Total Moves</div>
           </div>
+        </div>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 18px', background: 'rgba(61,155,106,0.1)',
+          border: '1px solid rgba(61,155,106,0.3)', borderRadius: 20,
+          color: 'var(--success)', fontSize: 13, fontWeight: 600,
+          marginBottom: 30
+        }}>
+          <CheckCircle size={16} />
+          <span>Study Session Checklist: Flashcard condition ticked green!</span>
         </div>
 
         <div style={{ display: 'flex', gap: 12 }}>

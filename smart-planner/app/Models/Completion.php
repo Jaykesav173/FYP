@@ -13,11 +13,13 @@ class Completion extends Model
         'user_id',
         'study_session_id',
         'is_completed',
+        'checklist',
         'completed_at',
     ];
 
     protected $casts = [
         'is_completed' => 'boolean',
+        'checklist'    => 'array',
         'completed_at' => 'datetime',
     ];
 
